@@ -1,41 +1,23 @@
-
 import torch
 import pandas as pd
 import numpy as np
-import rdkit as rd
-import os
-import json
-from collections import OrderedDict
-#from molvecgen import SmilesVectorizer
-import matplotlib.pyplot as plt
-from rdkit import Chem
-import biovec
-
-import pickle5 as pickle
-
 from torch_geometric.data import Data, DataLoader
 import torch
-
-from torch_geometric.nn.inits import constant
 import models.gat_gcn1 as GAT1
 from math import sqrt
 import torch.nn as nn
 from tqdm import tqdm
-import torch.nn.functional as F
 
 from sklearn.model_selection import  train_test_split
-
-
-from utils import trainss, predicting, rmse,mse,plot_losses,pearson,spearman,mae
-from process_data import process, smiles2graph
+from sklearn.metrics import roc_auc_score, mean_squared_error as rmse
+from scipy.stats import pearsonr, spearmanr
+from prot_features import protein_features_extraction
+from utils import trainss, predicting, plot_losses
+from process_data import process, smiles2graph, load_data
 
 torch.cuda.empty_cache()
-
-
 #loss_fn = nn.BCELoss() #regression
 loss_fn= nn.MSELoss() #classification
-
-
 device=torch.device('cpu')
 
 
@@ -43,130 +25,44 @@ TRAIN_BATCH_SIZE = 1673
 TEST_BATCH_SIZE =  550 
 LR = 0.001
 
-def load_data():
+def run():
 
     network_path = 'data1/' #windows
-    #network_path = '/home/gm/Downloads/thesis_data-20211116T221419Z-001/thesis_data/' #ubuntu
-    '''
-    with open('file11.txt') as f:
-        data = f.read()
-    protein_dict = json.loads(data, object_pairs_hook=OrderedDict)
-    
-    proteins=[]
+    protein_features_extraction()
 
-    with open('proteins.fasta',"w") as pr:   
-        for i in protein_dict.values():    
-            pr.write(i)
-        pr.close()
-
-    pv = biovec.models.ProtVec("proteins.fasta", corpus_fname="proteins.txt", n=3)
-
-    # The n-gram "QAT" should be trained in advance
-    pv["QAT"]
-
-    # convert whole amino acid sequence into vector
-  
-    
-    with open('file.txt') as f:
-        data = f.read()
-    protein_dict = json.loads(data, object_pairs_hook=OrderedDict)
-    vs=[]
-    ks=[]
-    for i,j in protein_dict.items():
-        ks.append(i)
-        vs.append(np.ndarray.flatten((np.array(pv.to_vecs(protein_dict[i])))))
-    for i in vs:
-        print(i.shape)
-    fe_vec=dict(zip(ks,vs))
-    #print(fe_vec)
-    with open('v.pickle', 'wb') as handle:
-     pickle.dump(fe_vec, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    
-
-    '''
-    with open('file.txt') as f:
-        data_pr = f.read()
-    protein_dict = json.loads(data_pr, object_pairs_hook=OrderedDict)
-    with open('v.pickle', 'rb') as handle:
-        pr = pickle.load(handle)
-
-    with open('drugs_smiles.txt') as f:
-        data = f.read()
-    drug_dict = json.loads(data, object_pairs_hook=OrderedDict)
-  
-    drug_drug = np.loadtxt(network_path + 'mat_drug_drug.txt')
-    drug_path=network_path
-
-    script_dir = os.path.dirname(drug_path) #<-- absolute dir the script is in
-    rel_path = "drug.txt"
-    abs_file_path = os.path.join(script_dir, rel_path)
-
-    file1 = open(abs_file_path, 'r')
-    drugss=[]
-    for i in range(708):
-        line = file1.readline()
-        if not line:
-            break
-        drugss.append(line.strip())
-    
-    file1.close()
-    script_dir = os.path.dirname(drug_path) #<-- absolute dir the script is in
-    rel_path = "protein.txt"
-    abs_file_path = os.path.join(script_dir, rel_path)
-
-    file1 = open(abs_file_path, 'r')
-    proteinss=[]
-    for i in range(1512):
-        line = file1.readline()
-        if not line:
-            break
-        proteinss.append(line.strip())
-    
-    file1.close()
-
-
-  
-    
+    proteinss, drugss, pr, drug_dict=load_data(network_path)    
     dti_orig = np.loadtxt(network_path + 'mat_drug_protein.txt')
     dr_pr_matrix= pd.DataFrame(dti_orig,index=drugss,columns=proteinss)
     dr_pr_matrix.to_csv("original_dataset.csv")
-   
-
-    # Removed DTIs with similar drugs or proteins
-    #drug_protein = np.loadtxt(network_path + 'mat_drug_protein_homo_protein_drug.txt')
-
-
-
-
     print("Load data finished.")
 
 
-    
+    #seperate the positive interactions from the negative
     whole_positive_index=[]
     whole_negative_index=[]
     for i in range(np.shape(dti_orig)[0]):
         for j in range(np.shape(dti_orig)[1]):
             if int(dti_orig[i][j]) == 1:
-                whole_positive_index.append([i, j])
+                whole_positive_index.append([i, j]) # append the edges, node drug with node protein
             elif int(dti_orig[i][j]) == 0:
                 whole_negative_index.append([i, j])
 
 
-        # pos:neg=1:10
+   # pos:neg=1:10 sampling 
     negative_sample = np.random.choice(np.arange(len(whole_negative_index)), size= 10*len(whole_positive_index), replace=False)
 
     
-    positive_data=np.zeros((len(whole_positive_index),3), dtype=int)
+    positive_data=np.zeros((len(whole_positive_index),3), dtype=int) #initialize positive data
     for index, i in enumerate(whole_positive_index):
         for j in range(2):
             positive_data[index][j] = i[j]
-    positive_data[:,2]=1
+    positive_data[:,2]=1 # all the positive data/ edges are equal with 1
 
     negative_data=np.zeros((len(negative_sample),3), dtype=int)
     for index, i in enumerate(negative_sample):
         for j in range(2):
             negative_data[index][j] = whole_negative_index[i][j]
-        negative_data[:,2]=0
+        negative_data[:,2]=0 #  all the negative data/ edges are equal with 0
     dataset1=pd.DataFrame(np.concatenate((positive_data,negative_data)), columns=['Drugs', 'Proteins', 'Interaction'])
 
     temp={}
@@ -246,17 +142,18 @@ def load_data():
     count=0
 
     for epoch in tqdm(range(100), desc= "Training:"):
-        features,y, d=trainss(model, device, train_loader, optimizer, epoch+1) # features, d=(trainss(modelss, device, train_loader, optimizer,  epoch+1))
+        d=trainss(model, device, train_loader, optimizer, epoch+1) # features, d=(trainss(modelss, device, train_loader, optimizer,  epoch+1))
         
         train_loss.append(d)
         G,P, loss = predicting(model, device, test_loader)
 
-        from sklearn.metrics import roc_auc_score,precision_score, mean_squared_error
+     
+        
         print(roc_auc_score(G,P))
 
         test_loss.append(loss)
         
-        ret = [rmse(G,P),mse(G,P),pearson(G,P),spearman(G,P),ci(G,P)]
+        ret = [rmse(G,P, squared=False),rmse(G,P, squared=True),pearsonr(G,P),spearmanr(G,P)]
         
         print(ret)
         from scipy import integrate
@@ -279,5 +176,6 @@ def load_data():
         
     torch.save(model.state_dict(),'model1.pth')
     plot_losses(train_loss,test_loss,"train_valid_1")
+
 if __name__  == "__main__":    
-    load_data()
+    run()

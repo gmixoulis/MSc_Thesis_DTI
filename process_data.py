@@ -7,6 +7,49 @@ import numpy as np
 from rdkit import Chem
 import torch.nn.functional as F
 from drug_embed import drug_embeddings
+import pickle5 as pickle
+from collections import OrderedDict
+import json
+import os
+
+def load_data(network_path):
+
+    with open('protein_features.pickle', 'rb') as handle:
+        pr = pickle.load(handle)
+
+
+    with open('drugs_smiles.txt') as f:
+        data = f.read()
+    drug_dict = json.loads(data, object_pairs_hook=OrderedDict)
+
+    script_dir = os.path.dirname(network_path) #<-- absolute dir the script is in
+    rel_path = "drug.txt"
+    abs_file_path = os.path.join(script_dir, rel_path)
+
+    file1 = open(abs_file_path, 'r')
+    drugss=[]
+    for i in range(708):
+        line = file1.readline()
+        if not line:
+            break
+        drugss.append(line.strip())
+    
+    file1.close()
+    script_dir = os.path.dirname(network_path) #<-- absolute dir the script is in
+    rel_path = "protein.txt"
+    abs_file_path = os.path.join(script_dir, rel_path)
+
+    file1 = open(abs_file_path, 'r')
+    proteinss=[]
+    for i in range(1512):
+        line = file1.readline()
+        if not line:
+            break
+        proteinss.append(line.strip())
+    
+    file1.close()
+    return proteinss, drugss, pr, drug_dict
+
 
 
 def process( xd, xt, y,smile_graph):

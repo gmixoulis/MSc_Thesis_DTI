@@ -20,30 +20,15 @@ def plot_losses(train_loss,test_loss,st):
     plt.savefig("oss.png")
 
 
-def mae(y,f):
-    return abs((y - f))
-
-def rmse(y,f):
-    rmse = sqrt(((y - f)**2).mean(axis=0))
-    return rmse
-def mse(y,f):
-    mse = ((y - f)**2).mean(axis=0)
-    return mse
-def pearson(y,f):
-    rp = np.corrcoef(y, f)[0,1]
-    return rp
-def spearman(y,f):
-    rs = stats.spearmanr(y, f)[0]
-    return rs
 
 
 def trainss(model,device, train_loader, optimizer,epoch):
         print('Training on')
         epoch=epoch
         device=device
-        total_preds=torch.Tensor()
+      
         train_loss=[]
-        total_labels=torch.Tensor()
+ 
         
         for  i in  tqdm(train_loader, desc='Train data on epoch  {}'.format(epoch)) :
             data = i.to(device)   
@@ -53,16 +38,14 @@ def trainss(model,device, train_loader, optimizer,epoch):
             loss =  F.mse_loss(output, data.y.view(-1,1))
             loss.backward(retain_graph=True)
             optimizer.step()
-            total_preds = torch.cat((total_preds, output.cpu()), -1)
-                
-            total_labels = torch.cat((total_labels, data.y.cpu()), -1)
+            
                 
             train_loss.append(loss)
             
 
             
         print('***Train epoch: {} tLoss: {:.6f}'.format(epoch, loss.item()))
-        return total_labels.flatten(),total_preds.flatten(),train_loss
+        return train_loss
 
 
 
